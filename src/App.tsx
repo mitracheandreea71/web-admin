@@ -26,6 +26,7 @@ export default function App({ keycloak }: Props) {
   const availabilityStartRef = useRef("");
   const availabilityEndRef = useRef("");
   const parking3dFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const parking3dTokenRef = useRef("");
   const [stats, setStats] = useState<any>(null);
   const [spots, setSpots] = useState<any[]>([]);
   const [spotsError, setSpotsError] = useState("");
@@ -344,7 +345,6 @@ export default function App({ keycloak }: Props) {
           }
 
           if (activePageRef.current === "Ocupare parcare") {
-            await loadSpotsWithToken(refreshedToken);
             const nextAvailability =
               await loadAvailabilityWithToken(refreshedToken);
             updateParking3dStatuses(nextAvailability);
@@ -2050,6 +2050,9 @@ export default function App({ keycloak }: Props) {
     const parking3dBaseUrl =
       (import.meta.env.VITE_PARKING_3D_URL as string | undefined) ??
       defaultParking3dUrl;
+    if (!parking3dTokenRef.current && keycloak.token) {
+      parking3dTokenRef.current = keycloak.token;
+    }
     const parking3dViewerUrl = (() => {
       const url = new URL(parking3dBaseUrl, window.location.origin);
       url.searchParams.set("mode", "projection");
@@ -2065,8 +2068,8 @@ export default function App({ keycloak }: Props) {
         url.searchParams.set("end", new Date(availabilityEnd).toISOString());
       }
 
-      if (keycloak.token) {
-        url.searchParams.set("token", keycloak.token);
+      if (parking3dTokenRef.current) {
+        url.searchParams.set("token", parking3dTokenRef.current);
       }
 
       return url.toString();
