@@ -89,6 +89,7 @@ export default function App({ keycloak }: Props) {
   const [sensorError, setSensorError] = useState("");
   const [availability, setAvailability] = useState<any[]>([]);
   const [availabilityError, setAvailabilityError] = useState("");
+  const [parking3dRefreshTick, setParking3dRefreshTick] = useState(0);
   const [reportType, setReportType] = useState("reservations");
   const [reportStart, setReportStart] = useState(() => {
     const date = new Date();
@@ -335,6 +336,7 @@ export default function App({ keycloak }: Props) {
           if (activePageRef.current === "Ocupare parcare") {
             await loadSpotsWithToken(refreshedToken);
             await loadAvailabilityWithToken(refreshedToken);
+            setParking3dRefreshTick((value) => value + 1);
           }
 
           if (activePageRef.current === "Simulare senzori") {
@@ -439,6 +441,7 @@ export default function App({ keycloak }: Props) {
       const token = await getAccessToken();
       setAvailabilityError("");
       await loadAvailabilityWithToken(token);
+      setParking3dRefreshTick((value) => value + 1);
     } catch (err: any) {
       setAvailabilityError(err.message);
     }
@@ -2055,6 +2058,8 @@ export default function App({ keycloak }: Props) {
         url.searchParams.set("token", keycloak.token);
       }
 
+      url.searchParams.set("refresh", String(parking3dRefreshTick));
+
       return url.toString();
     })();
 
@@ -2296,6 +2301,7 @@ export default function App({ keycloak }: Props) {
 
             <div className="parking-3d-shell">
               <iframe
+                key={parking3dViewerUrl}
                 className="parking-3d-frame"
                 src={parking3dViewerUrl}
                 title="Parcare 3D"
