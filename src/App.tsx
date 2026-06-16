@@ -1524,38 +1524,6 @@ export default function App({ keycloak }: Props) {
     }
   }
 
-  async function handleQrImageUpload(
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      setQrError("");
-      setQrResult(null);
-      setQrScannerMessage("Procesam imaginea QR...");
-
-      const imageScanner = new Html5Qrcode("qr-file-reader", {
-        verbose: false,
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-      });
-
-      const decodedText = await imageScanner.scanFile(file, false);
-      setQrToken(decodedText);
-      await validateQrToken(decodedText);
-    } catch (err: any) {
-      setQrScannerMessage("");
-      setQrError(
-        err?.message || "Nu am putut citi codul QR din imaginea selectata.",
-      );
-    } finally {
-      event.target.value = "";
-    }
-  }
-
   async function stopQrScanner() {
     const scanner = qrScannerRef.current;
 
@@ -3227,18 +3195,6 @@ export default function App({ keycloak }: Props) {
                 )}
               </div>
 
-              <div className="qr-upload-panel">
-                <label className="dashboard-card-label">
-                  Sau incarca o imagine cu codul QR
-                </label>
-                <input
-                  className="admin-input"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleQrImageUpload}
-                />
-                <div id="qr-file-reader" style={{ display: "none" }} />
-              </div>
             </div>
 
             {qrError && <pre className="dashboard-error">{qrError}</pre>}
