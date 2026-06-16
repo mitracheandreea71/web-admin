@@ -282,6 +282,62 @@ export default function App({ keycloak }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let socket: Socket | null = null;
+
+    const refreshAdminRealtimeData = async () => {
+      try {
+        const refreshedToken = await getAccessToken();
+        if (cancelled) {
+          return;
+        }
+
+        const [
+          ,
+          ,
+          ,
+          ,
+          ,
+          nextLiveAvailability,
+        ] = await Promise.all([
+          loadAdminStatsWithToken(refreshedToken),
+          loadReservationsWithToken(refreshedToken),
+          loadSubscriptionsWithToken(refreshedToken),
+          loadPaymentsWithToken(refreshedToken),
+          loadSpotsWithToken(refreshedToken),
+          loadLiveAvailabilityWithToken(refreshedToken),
+          loadNotificationsWithToken(refreshedToken),
+        ]);
+
+        if (activePageRef.current === "Ocupare parcare") {
+          updateParking3dStatuses(nextLiveAvailability);
+        }
+
+        if (selectedUserProfile?.user?.id) {
+          await refreshSelectedUserProfile();
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err.message);
+          setSpotsError(err.message);
+          setAvailabilityError(err.message);
+          setReservationsError(err.message);
+          setSubscriptionsError(err.message);
+          setPaymentsError(err.message);
+          setNotificationsError(err.message);
+        }
+      }
+    };
+
+    const scheduleAdminRefresh = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = setTimeout(() => {
+        void refreshAdminRealtimeData();
+      }, 300);
+    };
 
     async function connectDashboardSocket() {
       if (!keycloak.token || !isAdmin) {
@@ -302,7 +358,7 @@ export default function App({ keycloak }: Props) {
         ? new URL(apiUrl, window.location.origin).origin
         : window.location.origin;
 
-      const socket = io(socketUrl, {
+      socket = io(socketUrl, {
         transports: ["websocket", "polling"],
         autoConnect: true,
         reconnection: true,
@@ -317,80 +373,12 @@ export default function App({ keycloak }: Props) {
 
       dashboardSocketRef.current = socket;
 
-      socket.on("dashboard.changed", async () => {
-        try {
-          const refreshedToken = await getAccessToken();
-          if (cancelled) {
-            return;
-          }
-
-          await loadAdminStatsWithToken(refreshedToken);
-        } catch (err: any) {
-          if (!cancelled) {
-            setError(err.message);
-          }
-        }
-      });
-
-      socket.on("parking.projection.changed", async () => {
-        try {
-          const refreshedToken = await getAccessToken();
-          if (cancelled) {
-            return;
-          }
-
-          if (activePageRef.current === "Locuri de parcare") {
-            await loadSpotsWithToken(refreshedToken);
-            await loadLiveAvailabilityWithToken(refreshedToken);
-          }
-
-          if (activePageRef.current === "Ocupare parcare") {
-            const nextAvailability =
-              await loadAvailabilityWithToken(refreshedToken);
-            updateParking3dStatuses(nextAvailability);
-          }
-
-          if (activePageRef.current === "Simulare senzori") {
-            await loadSpotsWithToken(refreshedToken);
-            await loadLiveAvailabilityWithToken(refreshedToken);
-          }
-        } catch (err: any) {
-          if (!cancelled) {
-            setSpotsError(err.message);
-            setAvailabilityError(err.message);
-          }
-        }
-      });
-
-      socket.on("notification.changed", async () => {
-        try {
-          const refreshedToken = await getAccessToken();
-          if (cancelled) {
-            return;
-          }
-
-          await loadNotificationsWithToken(refreshedToken);
-        } catch (err: any) {
-          if (!cancelled) {
-            setNotificationsError(err.message);
-          }
-        }
-      });
-
-      socket.on("payment.changed", async () => {
-        try {
-          const refreshedToken = await getAccessToken();
-          if (cancelled) {
-            return;
-          }
-
-          await loadPaymentsWithToken(refreshedToken);
-        } catch (err: any) {
-          if (!cancelled) {
-            setPaymentsError(err.message);
-          }
-        }
-      });
+      socket.on("dashboard.changed", scheduleAdminRefresh);
+      socket.on("reservation.changed", scheduleAdminRefresh);
+      socket.on("subscription.changed", scheduleAdminRefresh);
+      socket.on("payment.changed", scheduleAdminRefresh);
+      socket.on("parking.projection.changed", scheduleAdminRefresh);
+      socket.on("notification.changed", scheduleAdminRefresh);
     }
 
     connectDashboardSocket().catch((err: any) => {
@@ -401,10 +389,19 @@ export default function App({ keycloak }: Props) {
 
     return () => {
       cancelled = true;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+      socket?.off("dashboard.changed", scheduleAdminRefresh);
+      socket?.off("reservation.changed", scheduleAdminRefresh);
+      socket?.off("subscription.changed", scheduleAdminRefresh);
+      socket?.off("payment.changed", scheduleAdminRefresh);
+      socket?.off("parking.projection.changed", scheduleAdminRefresh);
+      socket?.off("notification.changed", scheduleAdminRefresh);
       dashboardSocketRef.current?.disconnect();
       dashboardSocketRef.current = null;
     };
-  }, [isAdmin, keycloak.token]);
+  }, [isAdmin, keycloak.token, selectedUserProfile?.user?.id]);
 
   useEffect(() => {
     async function loadSpots() {
