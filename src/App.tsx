@@ -1064,6 +1064,7 @@ export default function App({ keycloak }: Props) {
   async function validateQrToken(tokenValue: string, vehiclePlate = "") {
     try {
       const token = await getAccessToken();
+      const normalizedVehiclePlate = normalizePlateInput(vehiclePlate);
 
       setQrError("");
       setQrResult(null);
@@ -1071,7 +1072,7 @@ export default function App({ keycloak }: Props) {
 
       const result = await apiPost<any>("/admin/qr/validate", token, {
         token: tokenValue,
-        vehiclePlate: vehiclePlate.trim() || undefined,
+        vehiclePlate: normalizedVehiclePlate || undefined,
       });
 
       setQrResult(result);
@@ -1376,7 +1377,7 @@ export default function App({ keycloak }: Props) {
       let detectedPlate = await recognizePlateFromCanvases(canvases);
       const expectedPlate = getExpectedPlateFromQrResult(qrResult);
 
-      if (!detectedPlate && expectedPlate) {
+      if (expectedPlate) {
         const cameraScore = scoreCanvasAgainstExpectedPlate(
           canvases[0],
           expectedPlate,
@@ -1393,7 +1394,14 @@ export default function App({ keycloak }: Props) {
             .join(" | "),
         );
 
-        if (cameraScore >= 0.34) {
+        if (
+          shouldPreferExpectedPlate({
+            detectedPlate,
+            expectedPlate,
+            visualScore: cameraScore,
+            threshold: 0.3,
+          })
+        ) {
           detectedPlate = expectedPlate;
         }
       }
@@ -1466,7 +1474,7 @@ export default function App({ keycloak }: Props) {
       );
       const expectedPlate = getExpectedPlateFromQrResult(qrResult);
 
-      if (!detectedPlate && expectedPlate) {
+      if (expectedPlate) {
         const expectedScore = scoreImageAgainstExpectedPlate(
           image,
           expectedPlate,
@@ -1482,7 +1490,14 @@ export default function App({ keycloak }: Props) {
             .join(" | "),
         );
 
-        if (expectedScore >= 0.38) {
+        if (
+          shouldPreferExpectedPlate({
+            detectedPlate,
+            expectedPlate,
+            visualScore: expectedScore,
+            threshold: 0.34,
+          })
+        ) {
           detectedPlate = expectedPlate;
         }
       }
@@ -6214,6 +6229,12 @@ function extractPlateCandidate(rawText: string) {
   return extractPlateCandidates(rawText)[0] ?? "";
 }
 
+function normalizePlateInput(value: string) {
+  return String(value ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
 function extractPlateCandidates(rawText: string) {
   const chunks = String(rawText ?? "")
     .toUpperCase()
@@ -6296,6 +6317,70 @@ function scorePlateCandidate(value: string) {
   if (/^[A-Z]{1,2}[0-9]{2,3}[A-Z]{3}$/.test(value)) score += 10;
   if (value.length >= 6 && value.length <= 8) score += 5;
   return score;
+}
+
+function shouldPreferExpectedPlate(params: {
+  detectedPlate: string;
+  expectedPlate: string;
+  visualScore: number;
+  threshold: number;
+}) {
+  const detectedPlate = normalizePlateInput(params.detectedPlate);
+  const expectedPlate = normalizePlateInput(params.expectedPlate);
+
+  if (!expectedPlate) return false;
+  if (!detectedPlate) return params.visualScore >= params.threshold;
+  if (detectedPlate === expectedPlate) return true;
+
+  const compatible = arePlatesOcrCompatible(detectedPlate, expectedPlate);
+  const strongVisualMatch = params.visualScore >= params.threshold + 0.08;
+  return params.visualScore >= params.threshold && (compatible || strongVisualMatch);
+}
+
+function arePlatesOcrCompatible(detectedPlate: string, expectedPlate: string) {
+  const detected = normalizePlateInput(detectedPlate);
+  const expected = normalizePlateInput(expectedPlate);
+
+  if (!detected || !expected) return false;
+  if (detected === expected) return true;
+  if (Math.abs(detected.length - expected.length) > 1) return false;
+
+  const distance = getWeightedPlateDistance(detected, expected);
+  const limit = expected.length <= 6 ? 1.7 : 2.1;
+  return distance <= limit;
+}
+
+function getWeightedPlateDistance(a: string, b: string) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => new Array(cols).fill(0));
+
+  for (let i = 0; i <= a.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) dp[0][j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = getOcrSubstitutionCost(a[i - 1], b[j - 1]);
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + substitutionCost,
+      );
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+function getOcrSubstitutionCost(a: string, b: string) {
+  if (a === b) return 0;
+
+  const groups = ["B8S5", "Z27", "O0QD", "I1L", "G6C", "A4"];
+  if (groups.some((group) => group.includes(a) && group.includes(b))) {
+    return 0.45;
+  }
+
+  return 1;
 }
 
 function expandPlateOcrCandidate(value: string) {
