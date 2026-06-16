@@ -1208,15 +1208,13 @@ export default function App({ keycloak }: Props) {
     try {
       const { PSM } = await import("tesseract.js");
       const worker = await preparePlateOcrWorker();
-      const canvasesToRead = options.fast ? canvases.slice(0, 6) : canvases;
-      const pageSegModes = options.fast
-        ? [PSM.SINGLE_LINE, PSM.SINGLE_WORD, PSM.RAW_LINE]
-        : [
-            PSM.SINGLE_LINE,
-            PSM.SINGLE_WORD,
-            PSM.SPARSE_TEXT,
-            PSM.RAW_LINE,
-          ];
+      const canvasesToRead = canvases;
+      const pageSegModes = [
+        PSM.SINGLE_LINE,
+        PSM.SINGLE_WORD,
+        PSM.SPARSE_TEXT,
+        PSM.RAW_LINE,
+      ];
 
       for (const canvas of canvasesToRead) {
         for (const pageSegMode of pageSegModes) {
@@ -6316,6 +6314,7 @@ function scorePlateCandidate(value: string) {
   let score = value.length;
   if (/^[A-Z]{1,2}[0-9]{2,3}[A-Z]{3}$/.test(value)) score += 10;
   if (value.length >= 6 && value.length <= 8) score += 5;
+  if (hasLikelyInsertedDigitBeforeSuffix(value)) score -= 4;
   return score;
 }
 
@@ -6384,9 +6383,56 @@ function getOcrSubstitutionCost(a: string, b: string) {
 }
 
 function expandPlateOcrCandidate(value: string) {
-  return Array.from(new Set([value, ...normalizePlateOcrCandidate(value)])).filter(
-    isValidRomanianPlateCandidate,
+  const normalizedCandidates = [value, ...normalizePlateOcrCandidate(value)];
+  return Array.from(
+    new Set([
+      ...normalizedCandidates,
+      ...normalizedCandidates.flatMap((candidate) =>
+        getLikelyInsertedDigitAlternates(candidate),
+      ),
+    ]),
+  ).filter(isValidRomanianPlateCandidate);
+}
+
+function hasLikelyInsertedDigitBeforeSuffix(value: string) {
+  const match = /^([A-Z]{1,2})([0-9]{3})([A-Z]{3})$/.exec(
+    normalizePlateInput(value),
   );
+  if (!match) return false;
+
+  const [, , digits, suffix] = match;
+  return isLikelyOcrDigitForLetter(digits[2], suffix[0]);
+}
+
+function getLikelyInsertedDigitAlternates(value: string) {
+  const match = /^([A-Z]{1,2})([0-9]{3})([A-Z]{3})$/.exec(
+    normalizePlateInput(value),
+  );
+  if (!match) return [];
+
+  const [, prefix, digits, suffix] = match;
+  if (!isLikelyOcrDigitForLetter(digits[2], suffix[0])) {
+    return [];
+  }
+
+  return [`${prefix}${digits.slice(0, 2)}${suffix}`];
+}
+
+function isLikelyOcrDigitForLetter(digit: string, letter: string) {
+  const pairs: Record<string, string[]> = {
+    Z: ["2", "7"],
+    B: ["8"],
+    S: ["5"],
+    O: ["0"],
+    D: ["0"],
+    I: ["1"],
+    L: ["1"],
+    G: ["6"],
+    C: ["6"],
+    A: ["4"],
+  };
+
+  return pairs[letter]?.includes(digit) ?? false;
 }
 
 function detectPlateByTemplate(canvases: HTMLCanvasElement[]) {
