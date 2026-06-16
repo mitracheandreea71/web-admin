@@ -2060,7 +2060,6 @@ export default function App({ keycloak }: Props) {
             <PageHero
               kicker="Smart Parking Overview"
               title="Dashboard operational"
-              subtitle="Indicatorii esentiali pentru administrarea parcarii, grupati clar si ganditi pentru decizii rapide."
               aside={
                 <div className="hero-status-card">
                   <div className="hero-status-row">
@@ -5400,7 +5399,7 @@ function PageHero({
 }: {
   kicker: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   aside?: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -5409,7 +5408,7 @@ function PageHero({
       <div className="page-hero-content">
         <div className="page-hero-kicker">{kicker}</div>
         <h1>{title}</h1>
-        <p className="page-subtitle">{subtitle}</p>
+        {subtitle ? <p className="page-subtitle">{subtitle}</p> : null}
         {children ? <div className="page-hero-extra">{children}</div> : null}
       </div>
       {aside ? <div className="page-hero-aside">{aside}</div> : null}
