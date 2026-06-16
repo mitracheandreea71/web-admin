@@ -4314,6 +4314,9 @@ function QrValidationDetails({ result }: { result: any }) {
       : "Rezervare validata";
   const resourceIdLabel =
     result?.type === "subscription" ? "Abonament" : "Rezervare";
+  const resourceStatusLabel = result?.exitAllowedAfterExpiry
+    ? "expirat - iesire permisa"
+    : formatQrStatus(result?.status);
 
   if (!resource) {
     return (
@@ -4374,8 +4377,7 @@ function QrValidationDetails({ result }: { result: any }) {
             </div>
           </div>
           <StatusBadge
-            value={result?.status ?? "-"}
-            kind={result?.valid ? "validation" : undefined}
+            value={resourceStatusLabel}
           />
         </div>
 
@@ -4442,6 +4444,10 @@ function QrValidationDetails({ result }: { result: any }) {
           <div className="activity-detail">
             <span>Email</span>
             <strong>{resource.userEmail ?? "-"}</strong>
+          </div>
+          <div className="activity-detail">
+            <span>Status resursa</span>
+            <strong>{resourceStatusLabel}</strong>
           </div>
           <div className="activity-detail">
             <span>Start acces</span>
@@ -6186,7 +6192,15 @@ function getStatusTone(
   }
 
   if (
-    ["pending", "loading", "expired", "secundar", "rezervat"].includes(
+    [
+      "pending",
+      "loading",
+      "expired",
+      "expirat",
+      "expirat - iesire permisa",
+      "secundar",
+      "rezervat",
+    ].includes(
       normalized,
     )
   ) {
