@@ -1581,8 +1581,9 @@ pre {
 
 .plate-ocr-preview img {
   display: block;
-  width: min(100%, 760px);
-  max-height: 220px;
+  width: auto;
+  max-width: min(100%, 760px);
+  height: auto;
   object-fit: contain;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);

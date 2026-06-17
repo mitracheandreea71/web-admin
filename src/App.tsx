@@ -1172,12 +1172,7 @@ export default function App({ keycloak }: Props) {
     return plateOcrWorkerRef.current;
   }
 
-  async function recognizePlateFromCanvases(
-    canvases: HTMLCanvasElement[],
-    options: { fast?: boolean } = {},
-  ) {
-    setPlateOcrPreview(canvases[0]?.toDataURL("image/png") ?? "");
-
+  async function recognizePlateFromCanvases(canvases: HTMLCanvasElement[]) {
     const texts: string[] = [];
     const candidateScores = new Map<
       string,
@@ -1265,15 +1260,24 @@ export default function App({ keycloak }: Props) {
     );
     const bestCandidate = rankedCandidates[0];
     const secondCandidate = rankedCandidates[1];
-    const minimumScore = options.fast ? 55 : 70;
+    const minimumScore = 115;
+    const bestTotal = bestCandidate
+      ? bestCandidate[1].score +
+        bestCandidate[1].count * 25 +
+        scorePlateCandidate(bestCandidate[0])
+      : 0;
+    const secondTotal = secondCandidate
+      ? secondCandidate[1].score +
+        secondCandidate[1].count * 25 +
+        scorePlateCandidate(secondCandidate[0])
+      : 0;
     const hasStrongConsensus =
       !!bestCandidate &&
-      (bestCandidate[1].count >= 2 ||
-        !secondCandidate ||
-        bestCandidate[1].score - secondCandidate[1].score >= 22);
+      bestCandidate[1].count >= 3 &&
+      (!secondCandidate || bestTotal - secondTotal >= 35);
     const detectedPlate =
       bestCandidate &&
-      bestCandidate[1].score >= minimumScore &&
+      bestTotal >= minimumScore &&
       hasStrongConsensus
         ? bestCandidate[0]
         : "";
@@ -1292,7 +1296,9 @@ export default function App({ keycloak }: Props) {
               .slice(0, 3)
               .map(
                 ([plate, data]) =>
-                  `${plate} (${Math.round(data.score)}, ${data.count}x)`,
+                  `${plate} (${Math.round(
+                    data.score + data.count * 25 + scorePlateCandidate(plate),
+                  )}, ${data.count}x)`,
               )
               .join(", ")}`
           : "Vot: fara candidat",
@@ -1371,6 +1377,7 @@ export default function App({ keycloak }: Props) {
         video,
         plateGuideRef.current,
       );
+      setPlateOcrPreview(bestCanvas.toDataURL("image/png"));
       const canvases = buildPlateOcrCanvasesFromCanvas(bestCanvas);
       let detectedPlate = await recognizePlateFromCanvases(canvases);
       const expectedPlate = getExpectedPlateFromQrResult(qrResult);
@@ -1467,6 +1474,7 @@ export default function App({ keycloak }: Props) {
       setPlateScannerMessage("Citim numarul din imaginea incarcata...");
 
       const image = await loadImageFromFile(file);
+      setPlateOcrPreview(imageToPreviewDataUrl(image));
       let detectedPlate = await recognizePlateFromCanvases(
         buildPlateOcrCanvasesFromImage(image),
       );
@@ -7028,6 +7036,21 @@ function loadImageFromFile(file: File) {
     };
     image.src = objectUrl;
   });
+}
+
+function imageToPreviewDataUrl(image: HTMLImageElement) {
+  const maxWidth = 1200;
+  const ratio = Math.min(1, maxWidth / Math.max(1, image.naturalWidth));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+
+  const context = canvas.getContext("2d");
+  if (!context) return image.src;
+
+  context.imageSmoothingEnabled = true;
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
 }
 
 function buildPlateOcrCanvasesFromImage(image: HTMLImageElement) {
