@@ -83,7 +83,7 @@ export default function App({ keycloak }: Props) {
   const [plateScannerStarted, setPlateScannerStarted] = useState(false);
   const [plateScannerLoading, setPlateScannerLoading] = useState(false);
   const [plateScannerMessage, setPlateScannerMessage] = useState("");
-  const [, setPlateOcrDebug] = useState("");
+  const [plateOcrDebug, setPlateOcrDebug] = useState("");
   const [plateOcrPreview, setPlateOcrPreview] = useState("");
   const [sensorActionLoadingId, setSensorActionLoadingId] = useState<
     number | null
@@ -1103,8 +1103,8 @@ export default function App({ keycloak }: Props) {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         },
         audio: false,
       });
@@ -1203,33 +1203,25 @@ export default function App({ keycloak }: Props) {
     try {
       const { PSM } = await import("tesseract.js");
       const worker = await preparePlateOcrWorker();
-      const canvasesToRead = canvases;
-      const pageSegModes = [
-        PSM.SINGLE_LINE,
-        PSM.SINGLE_WORD,
-        PSM.SPARSE_TEXT,
-        PSM.RAW_LINE,
-      ];
 
-      for (const canvas of canvasesToRead) {
-        for (const pageSegMode of pageSegModes) {
-          await worker.setParameters({
-            preserve_interword_spaces: "1",
-            tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            tessedit_pageseg_mode: pageSegMode,
-            user_defined_dpi: "300",
-          } as any);
+      await worker.setParameters({
+        preserve_interword_spaces: "1",
+        tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        tessedit_pageseg_mode: PSM.SINGLE_LINE,
+        user_defined_dpi: "300",
+      } as any);
 
-          const result = await worker.recognize(canvas);
-          const text = result.data.text;
-          texts.push(text);
-          addCandidateVote(
-            text,
-            `tesseract:${pageSegMode}`,
-            12,
-            Number(result.data.confidence ?? 0),
-          );
-        }
+      for (const canvas of canvases.slice(0, 3)) {
+        const result = await worker.recognize(canvas);
+        const text = result.data.text;
+
+        texts.push(text);
+        addCandidateVote(
+          text,
+          "tesseract:single_line",
+          12,
+          Number(result.data.confidence ?? 0),
+        );
       }
     } catch (err: any) {
       tesseractError = err?.message ?? "eroare necunoscuta";
@@ -1260,7 +1252,8 @@ export default function App({ keycloak }: Props) {
     );
     const bestCandidate = rankedCandidates[0];
     const secondCandidate = rankedCandidates[1];
-    const minimumScore = 115;
+    const minimumScore = 45;
+
     const bestTotal = bestCandidate
       ? bestCandidate[1].score +
         bestCandidate[1].count * 25 +
@@ -1273,12 +1266,11 @@ export default function App({ keycloak }: Props) {
       : 0;
     const hasStrongConsensus =
       !!bestCandidate &&
-      bestCandidate[1].count >= 3 &&
-      (!secondCandidate || bestTotal - secondTotal >= 35);
+      bestCandidate[1].count >= 1 &&
+      (!secondCandidate || bestTotal - secondTotal >= 10);
+
     const detectedPlate =
-      bestCandidate &&
-      bestTotal >= minimumScore &&
-      hasStrongConsensus
+      bestCandidate && bestTotal >= minimumScore && hasStrongConsensus
         ? bestCandidate[0]
         : "";
 
@@ -1379,8 +1371,8 @@ export default function App({ keycloak }: Props) {
       );
       setPlateOcrPreview(bestCanvas.toDataURL("image/png"));
       const canvases = buildPlateOcrCanvasesFromCanvas(bestCanvas);
-      let detectedPlate = await recognizePlateFromCanvases(canvases);
       const expectedPlate = getExpectedPlateFromQrResult(qrResult);
+      let detectedPlate = "";
 
       if (expectedPlate) {
         const cameraScore = scoreCanvasAgainstExpectedPlate(
@@ -1399,16 +1391,13 @@ export default function App({ keycloak }: Props) {
             .join(" | "),
         );
 
-        if (
-          shouldPreferExpectedPlate({
-            detectedPlate,
-            expectedPlate,
-            visualScore: cameraScore,
-            threshold: 0.3,
-          })
-        ) {
+        if (cameraScore >= 0.34) {
           detectedPlate = expectedPlate;
         }
+      }
+
+      if (!detectedPlate) {
+        detectedPlate = await recognizePlateFromCanvases(canvases);
       }
 
       if (!detectedPlate) {
@@ -1475,10 +1464,8 @@ export default function App({ keycloak }: Props) {
 
       const image = await loadImageFromFile(file);
       setPlateOcrPreview(imageToPreviewDataUrl(image));
-      let detectedPlate = await recognizePlateFromCanvases(
-        buildPlateOcrCanvasesFromImage(image),
-      );
       const expectedPlate = getExpectedPlateFromQrResult(qrResult);
+      let detectedPlate = "";
 
       if (expectedPlate) {
         const expectedScore = scoreImageAgainstExpectedPlate(
@@ -1496,16 +1483,15 @@ export default function App({ keycloak }: Props) {
             .join(" | "),
         );
 
-        if (
-          shouldPreferExpectedPlate({
-            detectedPlate,
-            expectedPlate,
-            visualScore: expectedScore,
-            threshold: 0.34,
-          })
-        ) {
+        if (expectedScore >= 0.34) {
           detectedPlate = expectedPlate;
         }
+      }
+
+      if (!detectedPlate) {
+        detectedPlate = await recognizePlateFromCanvases(
+          buildPlateOcrCanvasesFromImage(image),
+        );
       }
 
       if (!detectedPlate) {
@@ -3337,6 +3323,10 @@ export default function App({ keycloak }: Props) {
                       <p className="page-subtitle qr-helper-text">
                         {plateScannerMessage}
                       </p>
+                    ) : null}
+
+                    {plateOcrDebug ? (
+                      <pre className="qr-ocr-debug">{plateOcrDebug}</pre>
                     ) : null}
 
                     {plateOcrPreview ? (
@@ -6295,70 +6285,6 @@ function scorePlateCandidate(value: string) {
   return score;
 }
 
-function shouldPreferExpectedPlate(params: {
-  detectedPlate: string;
-  expectedPlate: string;
-  visualScore: number;
-  threshold: number;
-}) {
-  const detectedPlate = normalizePlateInput(params.detectedPlate);
-  const expectedPlate = normalizePlateInput(params.expectedPlate);
-
-  if (!expectedPlate) return false;
-  if (!detectedPlate) return params.visualScore >= params.threshold;
-  if (detectedPlate === expectedPlate) return true;
-
-  const compatible = arePlatesOcrCompatible(detectedPlate, expectedPlate);
-  const strongVisualMatch = params.visualScore >= params.threshold + 0.08;
-  return params.visualScore >= params.threshold && (compatible || strongVisualMatch);
-}
-
-function arePlatesOcrCompatible(detectedPlate: string, expectedPlate: string) {
-  const detected = normalizePlateInput(detectedPlate);
-  const expected = normalizePlateInput(expectedPlate);
-
-  if (!detected || !expected) return false;
-  if (detected === expected) return true;
-  if (Math.abs(detected.length - expected.length) > 1) return false;
-
-  const distance = getWeightedPlateDistance(detected, expected);
-  const limit = expected.length <= 6 ? 1.7 : 2.1;
-  return distance <= limit;
-}
-
-function getWeightedPlateDistance(a: string, b: string) {
-  const rows = a.length + 1;
-  const cols = b.length + 1;
-  const dp = Array.from({ length: rows }, () => new Array(cols).fill(0));
-
-  for (let i = 0; i <= a.length; i += 1) dp[i][0] = i;
-  for (let j = 0; j <= b.length; j += 1) dp[0][j] = j;
-
-  for (let i = 1; i <= a.length; i += 1) {
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitutionCost = getOcrSubstitutionCost(a[i - 1], b[j - 1]);
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + substitutionCost,
-      );
-    }
-  }
-
-  return dp[a.length][b.length];
-}
-
-function getOcrSubstitutionCost(a: string, b: string) {
-  if (a === b) return 0;
-
-  const groups = ["B8S5", "Z27", "O0QD", "I1L", "G6C", "A4"];
-  if (groups.some((group) => group.includes(a) && group.includes(b))) {
-    return 0.45;
-  }
-
-  return 1;
-}
-
 function expandPlateOcrCandidate(value: string) {
   const normalizedCandidates = [value, ...normalizePlateOcrCandidate(value)];
   return Array.from(
@@ -7055,8 +6981,9 @@ function imageToPreviewDataUrl(image: HTMLImageElement) {
 
 function buildPlateOcrCanvasesFromImage(image: HTMLImageElement) {
   const sourceCanvas = document.createElement("canvas");
-  const maxWidth = 2400;
+  const maxWidth = 1600;
   const ratio = Math.min(1, maxWidth / Math.max(1, image.naturalWidth));
+
   sourceCanvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
   sourceCanvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
 
@@ -7065,69 +6992,43 @@ function buildPlateOcrCanvasesFromImage(image: HTMLImageElement) {
     throw new Error("Nu s-a putut procesa imaginea incarcata.");
   }
 
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
   context.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
 
   const wholeCanvas = buildUploadWholeTextCanvas(sourceCanvas);
-  const sourceWidth = sourceCanvas.width;
-  const sourceHeight = sourceCanvas.height;
-  const crops = [
-    { x: 0, y: 0, width: 1, height: 1 },
-    { x: 0.04, y: 0.18, width: 0.92, height: 0.62 },
-    { x: 0.10, y: 0.25, width: 0.82, height: 0.45 },
-    { x: 0.16, y: 0.30, width: 0.74, height: 0.34 },
-    { x: 0.20, y: 0.34, width: 0.68, height: 0.28 },
-  ];
-
-  const croppedCanvases = crops.flatMap((crop) => {
-    const baseCanvas = buildImageCropCanvas(sourceCanvas, {
-      x: Math.round(sourceWidth * crop.x),
-      y: Math.round(sourceHeight * crop.y),
-      width: Math.round(sourceWidth * crop.width),
-      height: Math.round(sourceHeight * crop.height),
-    });
-
-    return [
-      buildTextFocusedCanvas(baseCanvas, false),
-      buildTextFocusedCanvas(baseCanvas, true),
-      buildContrastedCanvas(baseCanvas, "gray"),
-      buildContrastedCanvas(baseCanvas, "auto"),
-      buildContrastedCanvas(baseCanvas, "otsu"),
-      buildContrastedCanvas(baseCanvas, "invert"),
-    ].filter(Boolean) as HTMLCanvasElement[];
-  });
+  const focusedCanvas = buildTextFocusedCanvas(sourceCanvas, true);
+  const otsuCanvas = buildContrastedCanvas(wholeCanvas, "otsu");
 
   return [
     wholeCanvas,
-    buildContrastedCanvas(wholeCanvas, "auto"),
-    buildContrastedCanvas(wholeCanvas, "otsu"),
-    buildContrastedCanvas(wholeCanvas, "invert"),
-    ...croppedCanvases,
-  ];
+    focusedCanvas,
+    otsuCanvas,
+  ].filter(Boolean) as HTMLCanvasElement[];
 }
 
 function buildPlateOcrCanvasesFromCanvas(sourceCanvas: HTMLCanvasElement) {
   const canvas = document.createElement("canvas");
   canvas.width = sourceCanvas.width;
   canvas.height = sourceCanvas.height;
+
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
     throw new Error("Nu s-a putut procesa cadrul din camera.");
   }
 
+  context.imageSmoothingEnabled = false;
   context.drawImage(sourceCanvas, 0, 0);
 
   const wholeCanvas = buildUploadWholeTextCanvas(canvas);
+  const focusedCanvas = buildTextFocusedCanvas(canvas, true);
+  const otsuCanvas = buildContrastedCanvas(wholeCanvas, "otsu");
 
   return [
     wholeCanvas,
-    buildTextFocusedCanvas(canvas, false),
-    buildTextFocusedCanvas(canvas, true),
-    buildContrastedCanvas(wholeCanvas, "auto"),
-    buildContrastedCanvas(wholeCanvas, "otsu"),
-    buildContrastedCanvas(wholeCanvas, "invert"),
-    buildContrastedCanvas(canvas, "gray"),
-    buildContrastedCanvas(canvas, "auto"),
-    buildContrastedCanvas(canvas, "otsu"),
+    focusedCanvas,
+    otsuCanvas,
   ].filter(Boolean) as HTMLCanvasElement[];
 }
 
@@ -7161,49 +7062,15 @@ function buildUploadWholeTextCanvas(source: HTMLCanvasElement) {
   return canvas;
 }
 
-function buildImageCropCanvas(
-  source: HTMLCanvasElement,
-  crop: { x: number; y: number; width: number; height: number },
-) {
-  const scale = 3;
-  const padding = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = crop.width * scale + padding * 2;
-  canvas.height = crop.height * scale + padding * 2;
-
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    throw new Error("Nu s-a putut decupa imaginea incarcata.");
-  }
-
-  context.imageSmoothingEnabled = false;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(
-    source,
-    crop.x,
-    crop.y,
-    crop.width,
-    crop.height,
-    padding,
-    padding,
-    crop.width * scale,
-    crop.height * scale,
-  );
-
-  return canvas;
-}
-
 async function captureBestPlateFrame(
   video: HTMLVideoElement,
   guideElement: HTMLElement | null,
 ) {
   const capturedFrames: HTMLCanvasElement[] = [];
 
-  for (let index = 0; index < 9; index += 1) {
+  for (let index = 0; index < 3; index += 1) {
     capturedFrames.push(buildPrimaryPlateFrame(video, guideElement));
-
-    await wait(130);
+    await wait(80);
   }
 
   if (!capturedFrames.length) {

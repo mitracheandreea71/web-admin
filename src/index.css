@@ -1570,6 +1570,16 @@ pre {
   pointer-events: none;
 }
 
+.qr-ocr-debug {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 .plate-ocr-preview {
   display: grid;
   gap: 8px;
